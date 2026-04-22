@@ -1,0 +1,2 @@
+# ZineGen
+Create Solarpunk Zines.
