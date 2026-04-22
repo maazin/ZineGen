@@ -6,13 +6,36 @@ import {
   normalizeInput,
   parseZineContent
 } from "@/lib/zine";
-import type { ZineFormInput, ZineGenerationResponse } from "@/lib/types";
+import type { ZineContent, ZineFormInput, ZineGenerationResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 const textModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 const imageModel = "gemini-3-pro-image-preview";
 const fallbackImageHost = "https://image.pollinations.ai/prompt";
+
+function buildLocalFallbackContent(input: ZineFormInput): ZineContent {
+  const titleWords = input.theme.split(" ").slice(0, 4);
+  const themeTitle = titleWords.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+
+  return {
+    title: themeTitle || "Future Commons",
+    subtitle: `${input.vibe} • ${input.location}`,
+    hook: input.message,
+    manifesto: `${input.message} We build practical joy through shared tools, local care, and repair-first neighborhoods.`,
+    sections: [
+      { heading: "Build", body: `Shape ${input.theme} with community ownership, cooperative maintenance, and low-cost access for neighbors.` },
+      { heading: "Grow", body: `Use ${input.symbols} as living infrastructure that feeds people, cools streets, and restores trust.` },
+      { heading: "Share", body: "Design systems where skills, food, and energy circulate locally instead of being locked behind paywalls." },
+      { heading: "Practice", body: "Start small this week, document what works, and invite one new person into the process." }
+    ],
+    cta: "Print this. Post it. Build it together.",
+    footer: `For ${input.name}`,
+    artPrompt: `Premium editorial solarpunk illustration of ${input.theme} in ${input.location}, featuring ${input.symbols}, no text, portrait composition, tactile print texture.`,
+    paletteName: input.palette || "Mosslight",
+    palette: ["#dff5e1", "#7fcf93", "#2d6a4f", "#103d2e"]
+  };
+}
 
 function getErrorStatus(error: unknown): number | null {
   if (typeof error === "object" && error !== null && "status" in error) {
@@ -111,8 +134,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    const text = await generateZineTextWithFallback(client, buildCopyPrompt(input));
-    const content = parseZineContent(text, input);
+    let content: ZineContent;
+
+    try {
+      const text = await generateZineTextWithFallback(client, buildCopyPrompt(input));
+      content = parseZineContent(text, input);
+    } catch (textError) {
+      console.error("Google text generation failed, using local fallback copy", textError);
+      content = buildLocalFallbackContent(input);
+    }
+
     const imagePrompt = buildImagePrompt(content, input);
 
     try {
@@ -151,6 +182,6 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error("Generation failed", error);
-    return NextResponse.json({ error: "AI generation failed. Check key/quota and try again." }, { status: 502 });
+    return NextResponse.json({ error: "AI generation failed. Please retry in a moment." }, { status: 502 });
   }
 }
